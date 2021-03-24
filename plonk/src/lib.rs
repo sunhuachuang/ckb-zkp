@@ -44,11 +44,7 @@ use crate::rng::FiatShamirRng;
 
 mod utils;
 
-pub struct Plonk<
-    F: Field,
-    D: Digest,
-    PC: PolynomialCommitment<F, DensePolynomial<F>>,
-> {
+pub struct Plonk<F: Field, D: Digest, PC: PolynomialCommitment<F, DensePolynomial<F>>> {
     _field: PhantomData<F>,
     _digest: PhantomData<D>,
     _pc: PhantomData<PC>,
@@ -100,10 +96,10 @@ impl<F: Field, D: Digest, PC: PolynomialCommitment<F, DensePolynomial<F>>>
         Ok((pk, vk))
     }
 
-    pub fn prove(
+    pub fn prove<R: RngCore>(
         pk: &ProverKey<F, PC>,
         cs: &Composer<F>,
-        zk_rng: &mut dyn RngCore,
+        zk_rng: &mut R,
     ) -> Result<Proof<F, PC>, Error<PC::Error>> {
         let public_inputs = cs.public_inputs();
 
@@ -114,22 +110,20 @@ impl<F: Field, D: Digest, PC: PolynomialCommitment<F, DensePolynomial<F>>>
         let ps = AHPForPLONK::prover_init(cs, &pk.index)?;
         let vs = AHPForPLONK::verifier_init(&pk.vk.info)?;
 
-        let (ps, first_oracles) = AHPForPLONK::prover_first_round(ps, &cs)?;
+        let (ps, first_oracles) = AHPForPLONK::prover_first_round(ps, &cs, zk_rng)?;
         let (first_comms, first_rands) =
             PC::commit(&pk.ck, first_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         fs_rng.absorb(&to_bytes![first_comms].unwrap());
-        let (vs, first_msg) =
-            AHPForPLONK::verifier_first_round(vs, &mut fs_rng)?;
+        let (vs, first_msg) = AHPForPLONK::verifier_first_round(vs, &mut fs_rng)?;
 
         let (ps, second_oracles) =
-            AHPForPLONK::prover_second_round(ps, &first_msg, &pk.vk.info.ks)?;
+            AHPForPLONK::prover_second_round(ps, &first_msg, &pk.vk.info.ks, zk_rng)?;
         let (second_comms, second_rands) =
             PC::commit(&pk.ck, second_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         fs_rng.absorb(&to_bytes![second_comms].unwrap());
-        let (vs, second_msg) =
-            AHPForPLONK::verifier_second_round(vs, &mut fs_rng)?;
+        let (vs, second_msg) = AHPForPLONK::verifier_second_round(vs, &mut fs_rng)?;
 
         let third_oracles =
             AHPForPLONK::prover_third_round(ps, &second_msg, &pk.vk.info.ks)?;
@@ -137,8 +131,7 @@ impl<F: Field, D: Digest, PC: PolynomialCommitment<F, DensePolynomial<F>>>
             PC::commit(&pk.ck, third_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         fs_rng.absorb(&to_bytes![third_comms].unwrap());
-        let (vs, third_msg) =
-            AHPForPLONK::verifier_third_round(vs, &mut fs_rng)?;
+        let (vs, third_msg) = AHPForPLONK::verifier_third_round(vs, &mut fs_rng)?;
 
         let polynomials: Vec<_> = pk
             .index
@@ -189,9 +182,10 @@ impl<F: Field, D: Digest, PC: PolynomialCommitment<F, DensePolynomial<F>>>
         let evaluations: Vec<_> = {
             let mut evals = Vec::new();
             for (label, (_, point)) in &qs {
-                let lc = lcs.iter().find(|lc| &lc.label == label).ok_or_else(
-                    || Error::MissingEvaluation(label.to_string()),
-                )?;
+                let lc = lcs
+                    .iter()
+                    .find(|lc| &lc.label == label)
+                    .ok_or_else(|| Error::MissingEvaluation(label.to_string()))?;
                 let eval = polynomials.get_lc_eval(&lc, *point)?;
                 evals.push((label.to_string(), eval));
             }
@@ -233,18 +227,15 @@ impl<F: Field, D: Digest, PC: PolynomialCommitment<F, DensePolynomial<F>>>
 
         let first_comms = &proof.commitments[0];
         fs_rng.absorb(&to_bytes![first_comms].unwrap());
-        let (vs, first_msg) =
-            AHPForPLONK::verifier_first_round(vs, &mut fs_rng)?;
+        let (vs, first_msg) = AHPForPLONK::verifier_first_round(vs, &mut fs_rng)?;
 
         let second_comms = &proof.commitments[1];
         fs_rng.absorb(&to_bytes![second_comms].unwrap());
-        let (vs, second_msg) =
-            AHPForPLONK::verifier_second_round(vs, &mut fs_rng)?;
+        let (vs, second_msg) = AHPForPLONK::verifier_second_round(vs, &mut fs_rng)?;
 
         let third_comms = &proof.commitments[2];
         fs_rng.absorb(&to_bytes![third_comms].unwrap());
-        let (vs, third_msg) =
-            AHPForPLONK::verifier_third_round(vs, &mut fs_rng)?;
+        let (vs, third_msg) = AHPForPLONK::verifier_third_round(vs, &mut fs_rng)?;
 
         let query_set = AHPForPLONK::verifier_query_set(&vs);
         fs_rng.absorb(&proof.evaluations);
@@ -259,19 +250,13 @@ impl<F: Field, D: Digest, PC: PolynomialCommitment<F, DensePolynomial<F>>>
             evaluation_labels.sort_by(|a, b| a.0.cmp(&b.0));
 
             let mut evaluations = Evaluations::new();
-            for (q, eval) in
-                evaluation_labels.into_iter().zip(&proof.evaluations)
-            {
+            for (q, eval) in evaluation_labels.into_iter().zip(&proof.evaluations) {
                 evaluations.insert(q, *eval);
             }
             evaluations
         };
 
-        if !AHPForPLONK::verifier_equality_check(
-            &vs,
-            &evaluations,
-            public_inputs,
-        )? {
+        if !AHPForPLONK::verifier_equality_check(&vs, &evaluations, public_inputs)? {
             return Ok(false);
         };
 
@@ -382,22 +367,14 @@ mod tests {
             Fr::zero(),
             Fr::zero(),
         );
-        cs.create_mul_gate(
-            var_one,
-            var_two,
-            var_six,
-            None,
-            two,
-            two,
-            Fr::zero(),
-        );
+        cs.create_mul_gate(var_one, var_two, var_six, None, two, two, Fr::zero());
         cs.constrain_to_constant(var_six, six, Fr::zero());
 
         cs
     }
 
     #[test]
-    fn test_plonk() -> Result<(), Error<PCError>> {
+    fn plonk() -> Result<(), Error<PCError>> {
         let rng = &mut test_rng();
 
         // compose
@@ -405,11 +382,22 @@ mod tests {
         let ks = ks();
         println!("size of the circuit: {}", cs.size());
 
+        print!("setting up srs...");
         let srs = PlonkInst::setup(8, rng)?;
+        println!("done");
+
+        print!("generating keys...");
         let (pk, vk) = PlonkInst::keygen(&srs, &cs, ks)?;
+        println!("done");
+
+        print!("proving...");
         let proof = PlonkInst::prove(&pk, &cs, rng)?;
+        println!("done");
+
+        print!("verifying");
         let result = PlonkInst::verify(&vk, cs.public_inputs(), proof, rng)?;
-        assert!(result);
+        println!("done");
+
         Ok(())
     }
 }

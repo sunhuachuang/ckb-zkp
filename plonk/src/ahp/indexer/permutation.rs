@@ -1,5 +1,5 @@
 use ark_ff::FftField as Field;
-use ark_poly::{univariate::DensePolynomial, EvaluationDomain, Evaluations};
+use ark_poly::{EvaluationDomain, Evaluations};
 use ark_poly_commit::LinearCombination;
 use ark_std::{cfg_into_iter, vec, vec::Vec};
 
@@ -7,7 +7,7 @@ use ark_std::{cfg_into_iter, vec, vec::Vec};
 use rayon::prelude::*;
 
 use crate::data_structures::LabeledPolynomial;
-use crate::utils::evaluate_first_lagrange_poly;
+use crate::utils::evaluate_first_lagrange;
 
 pub struct PermutationKey<F: Field> {
     pub sigma_0: (LabeledPolynomial<F>, Vec<F>, Vec<F>),
@@ -53,7 +53,7 @@ impl<F: Field> PermutationKey<F> {
             * (w_2 + beta * sigma_2_zeta + gamma)
             * beta
             * z_shifted_zeta;
-        let l1_zeta = evaluate_first_lagrange_poly(domain_n, zeta);
+        let l1_zeta = evaluate_first_lagrange(domain_n, zeta);
         let alpha_2 = alpha.square();
         LinearCombination::new(
             "permutation",
@@ -67,32 +67,29 @@ impl<F: Field> PermutationKey<F> {
     pub(crate) fn compute_z(
         &self,
         domain_n: impl EvaluationDomain<F>,
-        domain_4n: impl EvaluationDomain<F>,
         ks: &[F; 4],
         w_n: (&[F], &[F], &[F], &[F]),
         beta: &F,
         gamma: &F,
-    ) -> (DensePolynomial<F>, Vec<F>, Vec<F>) {
+    ) -> Vec<F> {
         let n = domain_n.size();
         let roots: Vec<_> = domain_n.elements().collect();
         let (w_0_n, w_1_n, w_2_n, w_3_n) = w_n;
 
-        let numerator_factor =
-            |w: &F, root: &F, k: &F| *w + *k * beta * root + gamma;
+        let numerator_factor = |w: &F, root: &F, k: &F| *w + *k * beta * root + gamma;
         let denumerator_factor = |w: &F, sigma: &F| *w + *beta * sigma + gamma;
 
-        let perms: Vec<_> = cfg_into_iter!(0..n)
+        let perms: Vec<_> = cfg_into_iter!(0..n - 1)
             .map(|i| {
                 let numerator = numerator_factor(&w_0_n[i], &roots[i], &ks[0])
                     * numerator_factor(&w_1_n[i], &roots[i], &ks[1])
                     * numerator_factor(&w_2_n[i], &roots[i], &ks[2])
                     * numerator_factor(&w_3_n[i], &roots[i], &ks[3]);
 
-                let denumerator =
-                    denumerator_factor(&w_0_n[i], &self.sigma_0.1[i])
-                        * denumerator_factor(&w_1_n[i], &self.sigma_1.1[i])
-                        * denumerator_factor(&w_2_n[i], &self.sigma_2.1[i])
-                        * denumerator_factor(&w_3_n[i], &self.sigma_3.1[i]);
+                let denumerator = denumerator_factor(&w_0_n[i], &self.sigma_0.1[i])
+                    * denumerator_factor(&w_1_n[i], &self.sigma_1.1[i])
+                    * denumerator_factor(&w_2_n[i], &self.sigma_2.1[i])
+                    * denumerator_factor(&w_3_n[i], &self.sigma_3.1[i]);
                 let denumerator = denumerator.inverse().unwrap();
 
                 numerator * denumerator
@@ -106,13 +103,9 @@ impl<F: Field> PermutationKey<F> {
             acc *= perms[i];
             z.push(acc);
         });
-        assert_eq!(z[n - 1] * perms[n - 1], F::one());
+        assert_eq!(z[n - 2] * perms[n - 2], F::one());
 
-        let z_poly =
-            Evaluations::from_vec_and_domain(z.clone(), domain_n).interpolate();
-        let z_4n = domain_4n.coset_fft(&z_poly);
-
-        (z_poly, z, z_4n)
+        z
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -133,8 +126,7 @@ impl<F: Field> PermutationKey<F> {
             domain_4n.coset_fft(&[F::zero(), F::one()]),
             domain_4n,
         );
-        let numerator_factor =
-            |w: &F, root: &F, k: &F| *w + *k * beta * root + gamma;
+        let numerator_factor = |w: &F, root: &F, k: &F| *w + *k * beta * root + gamma;
         let denumerator_factor = |w: &F, sigma: &F| *w + *beta * sigma + gamma;
         let alpha_2 = alpha.square();
 

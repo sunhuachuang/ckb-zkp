@@ -66,7 +66,7 @@ impl<F: Field> Selectors<F> {
 impl<F: Field> Composer<F> {
     // selectors
     pub fn compose(&self, ks: &[F; 4]) -> Result<Selectors<F>, Error> {
-        let domain_n = GeneralEvaluationDomain::<F>::new(self.n)
+        let domain_n = GeneralEvaluationDomain::<F>::new(self.n + 1)
             .ok_or(Error::PolynomialDegreeTooLarge)?;
         let n = domain_n.size();
 

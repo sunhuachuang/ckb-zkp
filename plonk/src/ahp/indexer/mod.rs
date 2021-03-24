@@ -1,7 +1,6 @@
 use ark_ff::FftField as Field;
 use ark_poly::{
-    EvaluationDomain, Evaluations as EvaluationsOnDomain,
-    GeneralEvaluationDomain,
+    EvaluationDomain, Evaluations as EvaluationsOnDomain, GeneralEvaluationDomain,
 };
 use ark_std::cfg_into_iter;
 
@@ -11,7 +10,7 @@ use rayon::prelude::*;
 use crate::ahp::{AHPForPLONK, Error};
 use crate::composer::{Composer, Error as CSError, Selectors};
 use crate::data_structures::LabeledPolynomial;
-use crate::utils::{first_lagrange_poly, to_labeled, vanishing_poly};
+use crate::utils::{first_lagrange, last_lagrange, to_labeled};
 
 mod arithmetic;
 pub use arithmetic::ArithmeticKey;
@@ -63,92 +62,53 @@ impl<F: Field> AHPForPLONK<F> {
 
         let q_0_poly = to_labeled(
             "q_0",
-            EvaluationsOnDomain::from_vec_and_domain(
-                q_0.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(q_0.clone(), domain_n).interpolate(),
         );
         let q_1_poly = to_labeled(
             "q_1",
-            EvaluationsOnDomain::from_vec_and_domain(
-                q_1.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(q_1.clone(), domain_n).interpolate(),
         );
         let q_2_poly = to_labeled(
             "q_2",
-            EvaluationsOnDomain::from_vec_and_domain(
-                q_2.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(q_2.clone(), domain_n).interpolate(),
         );
         let q_3_poly = to_labeled(
             "q_3",
-            EvaluationsOnDomain::from_vec_and_domain(
-                q_3.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(q_3.clone(), domain_n).interpolate(),
         );
         let q_m_poly = to_labeled(
             "q_m",
-            EvaluationsOnDomain::from_vec_and_domain(
-                q_m.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(q_m.clone(), domain_n).interpolate(),
         );
         let q_c_poly = to_labeled(
             "q_c",
-            EvaluationsOnDomain::from_vec_and_domain(
-                q_c.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(q_c.clone(), domain_n).interpolate(),
         );
         let q_arith_poly = to_labeled(
             "q_arith",
-            EvaluationsOnDomain::from_vec_and_domain(
-                q_arith.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(q_arith.clone(), domain_n)
+                .interpolate(),
         );
 
         let sigma_0_poly = to_labeled(
             "sigma_0",
-            EvaluationsOnDomain::from_vec_and_domain(
-                sigma_0.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(sigma_0.clone(), domain_n)
+                .interpolate(),
         );
         let sigma_1_poly = to_labeled(
             "sigma_1",
-            EvaluationsOnDomain::from_vec_and_domain(
-                sigma_1.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(sigma_1.clone(), domain_n)
+                .interpolate(),
         );
         let sigma_2_poly = to_labeled(
             "sigma_2",
-            EvaluationsOnDomain::from_vec_and_domain(
-                sigma_2.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(sigma_2.clone(), domain_n)
+                .interpolate(),
         );
         let sigma_3_poly = to_labeled(
             "sigma_3",
-            EvaluationsOnDomain::from_vec_and_domain(
-                sigma_3.clone(),
-                domain_n,
-            )
-            .interpolate(),
+            EvaluationsOnDomain::from_vec_and_domain(sigma_3.clone(), domain_n)
+                .interpolate(),
         );
 
         let q_0_4n = domain_4n.coset_fft(&q_0_poly);
@@ -164,12 +124,12 @@ impl<F: Field> AHPForPLONK<F> {
         let sigma_2_4n = domain_4n.coset_fft(&sigma_2_poly);
         let sigma_3_4n = domain_4n.coset_fft(&sigma_3_poly);
 
-        let v_poly = vanishing_poly(domain_n);
+        let v_poly = last_lagrange(domain_n);
         let v_4n = domain_4n.coset_fft(&v_poly);
         let v_4n_inversed: Vec<_> =
             cfg_into_iter!(v_4n).map(|v| v.inverse().unwrap()).collect();
 
-        let l1_poly = first_lagrange_poly(domain_n);
+        let l1_poly = first_lagrange(domain_n);
         let l1_4n = domain_4n.coset_fft(&l1_poly);
 
         Ok(Index {

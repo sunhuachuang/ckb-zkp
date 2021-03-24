@@ -1,7 +1,5 @@
 use ark_ff::FftField as Field;
-use ark_poly::{
-    EvaluationDomain, Evaluations as EvaluationsOnDomain, Polynomial,
-};
+use ark_poly::{EvaluationDomain, Evaluations as EvaluationsOnDomain, Polynomial};
 use ark_poly_commit::{Evaluations, QuerySet};
 
 use rand_core::RngCore;
@@ -9,8 +7,7 @@ use rand_core::RngCore;
 use crate::ahp::indexer::IndexInfo;
 use crate::ahp::{AHPForPLONK, Error};
 use crate::utils::{
-    evaluate_first_lagrange_poly, evaluate_vanishing_poly, generator,
-    pad_to_size,
+    evaluate_first_lagrange, evaluate_last_lagrange, generator, pad_to_size,
 };
 
 pub struct VerifierState<'a, F: Field> {
@@ -36,9 +33,7 @@ pub struct ThirdMsg<F: Field> {
 }
 
 impl<F: Field> AHPForPLONK<F> {
-    pub fn verifier_init(
-        info: &IndexInfo<F>,
-    ) -> Result<VerifierState<'_, F>, Error> {
+    pub fn verifier_init(info: &IndexInfo<F>) -> Result<VerifierState<'_, F>, Error> {
         Ok(VerifierState {
             info,
 
@@ -110,7 +105,6 @@ impl<F: Field> AHPForPLONK<F> {
         evaluations: &Evaluations<F, F>,
         public_inputs: &[F],
     ) -> Result<bool, Error> {
-        // let alpha = vs.alpha.unwrap();
         let alpha = vs.alpha.unwrap();
         let beta = vs.beta.unwrap();
         let gamma = vs.gamma.unwrap();
@@ -118,12 +112,11 @@ impl<F: Field> AHPForPLONK<F> {
 
         let domain_n = vs.info.domain_n;
         let g = generator(domain_n);
-        let v_zeta = evaluate_vanishing_poly(domain_n, zeta);
+        let v_zeta = evaluate_last_lagrange(domain_n, zeta);
         let pi_zeta = {
             let pi_n = pad_to_size(public_inputs, domain_n.size());
             let pi_poly =
-                EvaluationsOnDomain::from_vec_and_domain(pi_n, domain_n)
-                    .interpolate();
+                EvaluationsOnDomain::from_vec_and_domain(pi_n, domain_n).interpolate();
             pi_poly.evaluate(&zeta)
         };
 
@@ -142,7 +135,7 @@ impl<F: Field> AHPForPLONK<F> {
         let t_zeta = get_eval(&evaluations, "t", &zeta)?;
         let r_zeta = get_eval(&evaluations, "r", &zeta)?;
 
-        let l1_zeta = evaluate_first_lagrange_poly(vs.info.domain_n, zeta);
+        let l1_zeta = evaluate_first_lagrange(vs.info.domain_n, zeta);
         let alpha_2 = alpha.square();
 
         let lhs = t_zeta * v_zeta;
